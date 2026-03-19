@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>PSXTrack · COAF36800</title>
 <style>
+/* (exactly the same CSS as before – unchanged) */
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 :root{
   --bg:#05070A;--card:#0D1117;
@@ -197,11 +197,9 @@ header{position:-webkit-sticky;position:sticky;top:0;z-index:100;padding:13px 20
 <body>
 
 <!-- TICKER -->
-
 <div class="ticker-wrap"><div class="ticker-track" id="ticker"></div></div>
 
 <!-- HEADER -->
-
 <header>
   <div class="hdr">
     <div>
@@ -222,7 +220,6 @@ header{position:-webkit-sticky;position:sticky;top:0;z-index:100;padding:13px 20
   <div class="err-bar" id="err"></div>
 
   <!-- OVERVIEW TAB -->
-
   <div class="panel active" id="tab-overview">
     <div class="hero">
       <div class="hero-label">Total Portfolio Value</div>
@@ -283,7 +280,6 @@ header{position:-webkit-sticky;position:sticky;top:0;z-index:100;padding:13px 20
   </div>
 
   <!-- ORDERS TAB -->
-
   <div class="panel" id="tab-orders">
     <div class="sec-title">All Orders</div>
     <div class="sec-sub">Each buy as a separate position &middot; 10 orders</div>
@@ -303,7 +299,6 @@ header{position:-webkit-sticky;position:sticky;top:0;z-index:100;padding:13px 20
   </div>
 
   <!-- FUNDS TAB -->
-
   <div class="panel" id="tab-funds">
     <div class="sec-title">Fund <span style="color:var(--green)">Comparison</span></div>
     <div class="sec-sub">Your portfolio vs top 5 institutional funds</div>
@@ -312,11 +307,9 @@ header{position:-webkit-sticky;position:sticky;top:0;z-index:100;padding:13px 20
 </div>
 
 <!-- FAB -->
-
-<button class="fab" id="fab" onclick="forceRefresh()"><span class="fab-icon">↻</span></button>
+<button class="fab" id="fab" onclick="forceRefresh()"><span class="fab-icon">&#8635;</span></button>
 
 <!-- BOTTOM NAV -->
-
 <nav class="bottom-nav">
   <button class="nav-btn active" onclick="showTab('overview',this)"><span class="nav-icon">&#128202;</span>Home</button>
   <button class="nav-btn"        onclick="showTab('orders',this)">  <span class="nav-icon">&#128203;</span>Orders</button>
@@ -328,7 +321,7 @@ header{position:-webkit-sticky;position:sticky;top:0;z-index:100;padding:13px 20
 'use strict';
 
 // ═══════════════════════════════════════════
-// STATIC DATA
+// STATIC DATA (unchanged)
 // ═══════════════════════════════════════════
 var ORDERS = [
   {id:1,  scrip:'FFC',     shares:45,  buyPrice:600.95, date:'Dec 29, 2025'},
@@ -350,7 +343,7 @@ var SCRIP_COLORS = {
   SYS:'#A855F7', AIRLINK:'#FF6B35'
 };
 
-// Last known prices — updated when live fetch succeeds
+// Last known prices — fallback if API fails
 var FALLBACK = {
   FFC:    {current:480.94, ldcp:533.87},
   MEBL:   {current:423.68, ldcp:441.49},
@@ -359,8 +352,9 @@ var FALLBACK = {
   AIRLINK:{current:137.51, ldcp:137.00}
 };
 
-var KSE_ENTRY = 179000;
-var KSE_NOW   = {current:149178.5, changePct:-3.05};
+// UPDATED: KSE-100 close on Dec 29, 2025 = 173,896.34
+var KSE_ENTRY = 173896.34;
+var KSE_NOW   = {current:149178.5, changePct:-3.05}; // will be overwritten by API
 
 var FUNDS = [
   {name:'Al Meezan Mutual Fund',    short:'ALMIF',   color:'#00D4AA', sinceEntry:-11.2, oneY:12.6, threeY:15.2, aum:'PKR 42B+', type:'Islamic Equity'},
@@ -392,7 +386,7 @@ var isFetching  = false;
 var activeFilter = 'ALL';
 
 // ═══════════════════════════════════════════
-// HELPERS
+// HELPERS (unchanged)
 // ═══════════════════════════════════════════
 function $(id) { return document.getElementById(id); }
 function pkr(n) { return 'PKR ' + Math.abs(n).toLocaleString('en', {maximumFractionDigits:0}); }
@@ -459,149 +453,34 @@ function scripStats(scrip) {
 }
 
 // ═══════════════════════════════════════════
-// FETCH — cross-browser compatible
+// FETCH – calls Vercel API
 // ═══════════════════════════════════════════
-var PROXIES = [
-  function(u) { return 'https://corsproxy.io/?' + encodeURIComponent(u); },
-  function(u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
-  function(u) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); }
-];
-
-// Compatible timeout fetch — works on ALL Safari/iOS versions
-function fetchWithTimeout(url, ms) {
-  return new Promise(function(resolve, reject) {
-    var ctrl = new AbortController();
-    var timer = setTimeout(function() { ctrl.abort(); }, ms);
-    fetch(url, {signal: ctrl.signal})
-      .then(function(r) { clearTimeout(timer); resolve(r); })
-      .catch(function(e) { clearTimeout(timer); reject(e); });
-  });
-}
-
-function tryFetch(url) {
-  // Try proxies sequentially using reduce to avoid deep nesting
-  var chain = Promise.resolve(null);
-  PROXIES.forEach(function(makeProxy) {
-    chain = chain.then(function(result) {
-      if (result !== null) return result; // already got data, skip
-      return fetchWithTimeout(makeProxy(url), 4000)
-        .then(function(r) {
-          if (!r.ok) return null;
-          return r.text();
-        })
-        .then(function(text) {
-          if (!text) return null;
-          var t = text.trim();
-          if (t[0] !== '{' && t[0] !== '[') return null;
-          try { return JSON.parse(t); } catch(e) { return null; }
-        })
-        .catch(function() { return null; });
-    });
-  });
-  return chain;
-}
-
-function parseTimeseries(j, sym, isEOD) {
-  if (!j || !j.close || !j.close.length) return null;
-  var n   = j.close.length;
-  var cur = j.close[n - 1];
-  if (!cur || isNaN(cur)) return null;
-  // intraday: close[n-2] is 1 min ago — use FALLBACK ldcp instead
-  // EOD: close[n-2] is prev trading day — correct
-  var ldcp = (isEOD && n >= 2) ? j.close[n - 2] : FALLBACK[sym].ldcp;
-  if (!ldcp || isNaN(ldcp)) ldcp = FALLBACK[sym].ldcp;
-  var chg = cur - ldcp;
-  return {
-    current:   cur,
-    change:    chg,
-    changePct: ldcp ? (chg / ldcp) * 100 : 0
-  };
-}
-
-function fetchSymbol(sym) {
-  // Try intraday first, then EOD — each returns null on failure
-  return tryFetch('https://dps.psx.com.pk/timeseries/int/' + sym)
-    .then(function(data) {
-      if (data && data.close) {
-        var p = parseTimeseries(data, sym, false);
-        if (p) return p;  // got live intraday price
-      }
-      // Intraday failed — try EOD
-      return tryFetch('https://dps.psx.com.pk/timeseries/eod/' + sym)
-        .then(function(eod) {
-          if (eod && eod.close) {
-            return parseTimeseries(eod, sym, true);
-          }
-          return null;
-        });
-    })
-    .catch(function() { return null; });
-}
-
-function fetchMarketWatch() {
-  return tryFetch('https://dps.psx.com.pk/market-watch')
-    .then(function(data) {
-      if (!Array.isArray(data)) return false;
-      var hits = 0;
-      SCRIPS.forEach(function(sym) {
-        var item = null;
-        for (var i=0; i<data.length; i++) {
-          var s = (data[i].symbol || data[i].scrip || data[i].SYMBOL || '').toString().toUpperCase();
-          if (s === sym) { item = data[i]; break; }
-        }
-        if (item) {
-          var cur  = parseFloat(item.current || item.ltp || item.close || 0);
-          var ldcp = parseFloat(item.ldcp || item.prev_close || FALLBACK[sym].ldcp);
-          if (cur > 0) {
-            var chg = cur - ldcp;
-            prices[sym] = {current:cur, change:chg, changePct:ldcp?(chg/ldcp)*100:0};
-            hits++;
-          }
-        }
-      });
-      // Update KSE-100
-      var kseItem = null;
-      for (var i=0; i<data.length; i++) {
-        var s = (data[i].symbol || data[i].scrip || data[i].SYMBOL || '').toString().toUpperCase();
-        if (s === 'KSE100' || s.indexOf('KSE') !== -1 && s.indexOf('100') !== -1) {
-          kseItem = data[i]; break;
-        }
-      }
-      if (kseItem) {
-        var kCur  = parseFloat(kseItem.current || kseItem.ltp || kseItem.close || 0);
-        var kLdcp = parseFloat(kseItem.ldcp || kseItem.prev_close || KSE_NOW.current);
-        if (kCur > 0) KSE_NOW = {current:kCur, changePct:kLdcp?((kCur-kLdcp)/kLdcp)*100:0};
-      }
-      return hits > 0;
-    })
-    .catch(function() { return false; });
-}
-
 function fetchData() {
   setStatusUI('loading');
-  return fetchMarketWatch()
-    .then(function(bulkOk) {
-      if (bulkOk) {
-        isLive = true;
-        return;
-      }
-      // Fallback: fetch each symbol
-      var promises = SCRIPS.map(function(sym) { return fetchSymbol(sym); });
-      return Promise.all(promises).then(function(results) {
-        var hits = 0;
-        results.forEach(function(r, i) {
-          if (r) { prices[SCRIPS[i]] = r; hits++; }
-        });
-        isLive = hits > 0;
-      });
+  return fetch('/api/refresh')
+    .then(function(response) {
+      if (!response.ok) throw new Error('API error');
+      return response.json();
     })
-    .then(function() {
+    .then(function(data) {
+      // Update prices
+      SCRIPS.forEach(function(sym) {
+        if (data.prices && data.prices[sym]) {
+          prices[sym] = data.prices[sym];
+        }
+      });
+      // Update KSE_NOW
+      if (data.kse) {
+        KSE_NOW.current = data.kse.current;
+        KSE_NOW.changePct = data.kse.changePct;
+      }
+      isLive = !data.error;  // if error field present, it's fallback
       var now = new Date();
       var timeStr = now.toLocaleTimeString('en', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
       $('last-time').textContent = timeStr;
       setStatusUI(isLive ? 'live' : 'cache');
-      if (!isLive && isMarketOpen()) {
-        showErr('PSX not responding. Showing cached prices.');
+      if (data.error) {
+        showErr('Using cached prices – ' + data.error);
       } else {
         hideErr();
       }
@@ -610,7 +489,7 @@ function fetchData() {
     .catch(function(e) {
       console.error('fetchData error:', e);
       setStatusUI('cache');
-      hideErr();
+      showErr('Could not reach server. Showing cached prices.');
       renderAll();
     });
 }
@@ -652,8 +531,13 @@ function showErr(m) { var e=$('err'); e.textContent='\u26A0 '+m; e.style.display
 function hideErr()  { $('err').style.display='none'; }
 
 // ═══════════════════════════════════════════
-// RENDER: STATS
+// RENDER functions (identical to original)
+// (renderStats, renderTicker, renderScripGrid,
+//  renderOrdersList, renderLeaderboard,
+//  renderFundCards, renderCharts, etc.)
+// They are exactly as before – I'll keep them concise.
 // ═══════════════════════════════════════════
+
 function renderStats() {
   var s = calcStats();
   $('h-value').textContent = pkr(s.value);
@@ -676,9 +560,6 @@ function renderStats() {
   aEl.style.color = s.alpha>=0 ? 'var(--green)' : 'var(--red)';
 }
 
-// ═══════════════════════════════════════════
-// RENDER: TICKER
-// ═══════════════════════════════════════════
 function renderTicker() {
   var items = [{name:'KSE-100', val:KSE_NOW.current.toLocaleString('en',{maximumFractionDigits:0}), chgPct:KSE_NOW.changePct}];
   SCRIPS.forEach(function(s) {
@@ -695,9 +576,6 @@ function renderTicker() {
   $('ticker').innerHTML = html + html;
 }
 
-// ═══════════════════════════════════════════
-// RENDER: SCRIP GRID
-// ═══════════════════════════════════════════
 function renderScripGrid() {
   var html = SCRIPS.map(function(scrip) {
     var s   = scripStats(scrip);
@@ -720,9 +598,6 @@ function renderScripGrid() {
   $('scrip-grid').innerHTML = html;
 }
 
-// ═══════════════════════════════════════════
-// RENDER: ORDERS
-// ═══════════════════════════════════════════
 function filterOrders(scrip, btn) {
   activeFilter = scrip;
   var btns = document.querySelectorAll('.filter-btn');
@@ -786,9 +661,6 @@ function renderOrdersList() {
   renderOrderBar(filtered);
 }
 
-// ═══════════════════════════════════════════
-// RENDER: LEADERBOARD
-// ═══════════════════════════════════════════
 function renderLeaderboard() {
   var s       = calcStats();
   var yourPct = s.pnlPct;
@@ -826,9 +698,6 @@ function renderLeaderboard() {
     + outIn+' KSE-100 by <strong>'+sign2+Math.abs(yourPct-ksePct).toFixed(1)+'pp</strong>.';
 }
 
-// ═══════════════════════════════════════════
-// RENDER: FUND CARDS
-// ═══════════════════════════════════════════
 function renderFundCards() {
   var s         = calcStats();
   var yourPct   = s.pnlPct;
@@ -876,7 +745,7 @@ function renderFundCards() {
 }
 
 // ═══════════════════════════════════════════
-// CHARTS — pure SVG
+// CHARTS — pure SVG (unchanged)
 // ═══════════════════════════════════════════
 function svgLine(wrapId, series, labels, h) {
   var wrap = $(wrapId);
@@ -988,9 +857,6 @@ function renderCharts() {
   renderOrderBar(filt);
 }
 
-// ═══════════════════════════════════════════
-// RENDER ALL
-// ═══════════════════════════════════════════
 function renderAll() {
   renderStats();
   renderTicker();
@@ -1023,10 +889,10 @@ if (document.readyState === 'loading') {
 
 function init() {
   renderAll();
-  forceRefresh();
+  forceRefresh();  // fetch immediately
   setInterval(function() {
-    if (!isFetching) fetchData();
-  }, 60000);
+    if (!isFetching) forceRefresh();
+  }, 60000); // auto-refresh every minute
   var rt;
   window.addEventListener('resize', function() {
     clearTimeout(rt);
@@ -1034,6 +900,5 @@ function init() {
   });
 }
 </script>
-
 </body>
 </html>
